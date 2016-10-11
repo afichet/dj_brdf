@@ -29,7 +29,7 @@ public:
 
 		// Retrieve the parameters if specified		
 		Float step_t = props.getFloat("step_t", DJB__UTIA_STEP_T),
-			step_p = props.getFloat("step_t", DJB__UTIA_STEP_T);
+			step_p = props.getFloat("step_p", DJB__UTIA_STEP_P);
 		
 		int nti = props.getInteger("nti", DJB__UTIA_NTI),
 			ntv = props.getInteger("ntv", DJB__UTIA_NTV);
