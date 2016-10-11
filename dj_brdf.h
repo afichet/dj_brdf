@@ -1255,7 +1255,7 @@ void utia::loadFile(const char *filename) {
 				}
 			}    
 #else
-			DJB_LOG("djb_verbose: Can load OpenEXR file. Try compile dj_brdf with DJB_USE_OPENEXR 1\n");
+			DJB_LOG("djb_verbose: Can't load OpenEXR file. Try compile dj_brdf with DJB_USE_OPENEXR 1\n");
 #endif
 			break;
 		}
@@ -1281,7 +1281,7 @@ void utia::loadFile(const char *filename) {
 			}
 		
 #else
-			DJB_LOG("djb_verbose: Can load PNG file. Try compile dj_brdf with DJB_USE_LODEPNG 1\n");
+			DJB_LOG("djb_verbose: Can't load PNG file. Try compile dj_brdf with DJB_USE_LODEPNG 1\n");
 #endif
 			break;
 		}
@@ -1310,10 +1310,11 @@ void utia::correctColorSpace() {
 									m_samples[cnt + i],
 									m_samples[2 * cnt + i],
 									&R, &G, &B);
-				
-				m_samples[i] = R;
-				m_samples[cnt + i] = G;
-				m_samples[2 * cnt + i] = B;
+
+				// In XYZ encoding, values are 100 times scaled
+				m_samples[i] = R / 100.0;
+				m_samples[cnt + i] = G / 100.0;
+				m_samples[2 * cnt + i] = B / 100.0;
 			}
 			break;
 		}
