@@ -100,6 +100,22 @@ struct vec3 {
 	 static float_t sRgb2Rgb(float_t sRgb) {
 		 return (sRgb < 0.0404482362771076) ? sRgb/12.92 : pow((sRgb + 0.055)/1.055, 2.4);
 	 }
+
+	 static void Rgb2Xyz(float_t R, float_t G, float_t B, float_t *X, float_t *Y, float_t *Z)
+	 {
+		 *X = (float_t) (0.4123955889674142161 * R + 0.3575834307637148171 * G + 0.1804926473817015735 * B);
+		 *Y = (float_t) (0.2125862307855955516 * R + 0.7151703037034108499 * G + 0.07220049864333622685 * B);
+		 *Z = (float_t) (0.01929721549174694484 * R + 0.1191838645808485318 * G + 0.9504971251315797660 * B);
+	 }
+
+	 static void sRgb2Xyz(float_t R, float_t G, float_t B, float_t *X, float_t *Y, float_t *Z)
+	 {
+		 R = sRgb2Rgb(R);
+		 G = sRgb2Rgb(G);
+		 B = sRgb2Rgb(B);
+		 
+		 Rgb2Xyz(R, G, B, X, Y, Z);
+	 }
  };
 
  
@@ -172,7 +188,6 @@ public:
 #define DJB__UTIA_NPI     48
 #define DJB__UTIA_NTV      6
 #define DJB__UTIA_NPV     48
-#define DJB__UTIA_PLANES   3
 
 class utia : public brdf {
  public:
@@ -190,7 +205,7 @@ class utia : public brdf {
  private:
 	std::vector<double> m_samples;
  	float m_step_t, m_step_p;
-	int m_nti, m_ntv, m_npi, m_npv, m_planes; //!\brief BRDF dimensions
+	int m_nti, m_ntv, m_npi, m_npv; //!\brief BRDF dimensions
 	FileFormat m_fileFormat;
 	ColorFormat m_colorFormat;
 public:
@@ -1103,13 +1118,12 @@ m_step_t(step_t),
 	m_ntv(ntv),
 	m_npi((int)(360.0 / step_p)),
 	m_npv((int)(360.0 / step_p)),
-	m_planes(DJB__UTIA_PLANES),
 	m_fileFormat(fileFormat),
 	m_colorFormat(colorFormat)
 {
 
 	// allocate memory
-	int cnt = m_planes * m_nti * m_npi * m_ntv * m_npv;
+	int cnt = 3 * m_nti * m_npi * m_ntv * m_npv;
 	m_samples.resize(cnt);
 
 	// read data
@@ -1190,12 +1204,12 @@ vec3 utia::eval(const vec3& i, const vec3& o, const void *user_param) const
 
 	int nc = m_npv * m_ntv;
 	int nr = m_npi * m_nti;
-	float_t RGB[m_planes];
+	float_t RGB[3] = {0};
+	float_t XYZ[3] = {0};
 
-	for(int isp = 0; isp < m_planes; ++isp) {
+	for(int isp = 0; isp < 3; ++isp) {
 		int i, j, k, l;
-
-		RGB[isp] = 0.0;
+		
 		for(i = 0; i < 2; ++i)
 			for(j = 0; j < 2; ++j)
 				for(k = 0; k < 2; ++k)
@@ -1204,9 +1218,12 @@ vec3 utia::eval(const vec3& i, const vec3& o, const void *user_param) const
 						int idx = isp * nr * nc + nc * (m_npi * iti[i] + ipi[k]) 
 							+ m_npv * itv[j] + ipv[l];
 						
-						RGB[isp]+= w * (float_t)m_samples[idx];
+						XYZ[isp]+= w * (float_t)m_samples[idx];
 					}
 	}
+
+	// Convert back to RGB
+    colorspace::Xyz2Rgb(XYZ[0], XYZ[1], XYZ[2], &RGB[0], &RGB[1], &RGB[2]);
 
 	return vec3(
 		max((float_t)0, RGB[0]),
@@ -1224,7 +1241,7 @@ void utia::loadFile(const char *filename) {
 			if (!f.is_open())
 				throw exc("djb_error: Failed to open %s\n", filename);
 			
-			int cnt = m_planes * m_nti * m_npi * m_ntv * m_npv;
+			int cnt = 3 * m_nti * m_npi * m_ntv * m_npv;
 			f.read((char *)&m_samples[0], sizeof(double) * cnt);
 
 			if (f.fail())
@@ -1272,7 +1289,7 @@ void utia::loadFile(const char *filename) {
 				throw exc("djb_error: Failed to open %s\n", filename);
 			
 			long count = 0;
-			for (int isp = 0; isp < m_planes; isp++) {
+			for (int isp = 0; isp < 3; isp++) {
 				for (int ni = 0; ni < m_nti * m_npi; ni++) {
 					for (int nv = 0; nv < m_ntv * m_npv; nv++) {
 						m_samples[count++] = (double) image[4 * m_ntv * m_npv * ni + 4 * nv + isp] / 255.0;
@@ -1289,33 +1306,27 @@ void utia::loadFile(const char *filename) {
 }
 
 void utia::correctColorSpace() {
-
 	int cnt = m_nti * m_npi * m_ntv * m_npv;
 
-	// Convert everything to linear RGB
+	// Convert everything to XYZ
 	switch(m_colorFormat) {
 	case ColorFormat_sRGB:
-		{
-			for (int i = 0; i < m_planes * cnt; i++) {
-				m_samples[i] = (double)colorspace::sRgb2Rgb((float_t)m_samples[i]);
+		{		
+			for (int i = 0; i < cnt; i++) {
+				float_t X, Y, Z;
+				colorspace::sRgb2Xyz(m_samples[i],
+									m_samples[cnt + i],
+									m_samples[2 * cnt + i],
+									&X, &Y, &Z);
+
+				// In XYZ encoding, values are 100 times scaled
+				m_samples[i] = X * 100.0;
+				m_samples[cnt + i] = Y * 100.0;
+				m_samples[2 * cnt + i] = Z * 100.0;
 			}
-			break;
 		}
 	case ColorFormat_XYZ:
 		{
-			// Assume m_planes = 3... X Y Z
-			for (int i = 0; i < cnt; i++) {
-				float_t R, G, B;
-				colorspace::Xyz2Rgb(m_samples[i],
-									m_samples[cnt + i],
-									m_samples[2 * cnt + i],
-									&R, &G, &B);
-
-				// In XYZ encoding, values are 100 times scaled
-				m_samples[i] = R / 100.0;
-				m_samples[cnt + i] = G / 100.0;
-				m_samples[2 * cnt + i] = B / 100.0;
-			}
 			break;
 		}
 	}
@@ -1336,7 +1347,7 @@ void utia::normalize()
 	}
 
 	// scale
-	float_t k = /* Magic constant provided by Jiri Filip */ 1.f / 140.f;
+	float_t k = /* Magic constant provided by Jiri Filip */ 1.f / 1400.f;
 	for (int i = 0; i < (int)m_samples.size(); ++i)
 		m_samples[i]*= k;
 }
