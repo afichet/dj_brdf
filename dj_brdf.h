@@ -172,7 +172,6 @@ public:
 #define DJB__UTIA_NPI     48
 #define DJB__UTIA_NTV      6
 #define DJB__UTIA_NPV     48
-#define DJB__UTIA_PLANES   3
 
 class utia : public brdf {
  public:
@@ -190,7 +189,7 @@ class utia : public brdf {
  private:
 	std::vector<double> m_samples;
  	float m_step_t, m_step_p;
-	int m_nti, m_ntv, m_npi, m_npv, m_planes; //!\brief BRDF dimensions
+	int m_nti, m_ntv, m_npi, m_npv; //!\brief BRDF dimensions
 	FileFormat m_fileFormat;
 	ColorFormat m_colorFormat;
 public:
@@ -1103,13 +1102,12 @@ m_step_t(step_t),
 	m_ntv(ntv),
 	m_npi((int)(360.0 / step_p)),
 	m_npv((int)(360.0 / step_p)),
-	m_planes(DJB__UTIA_PLANES),
 	m_fileFormat(fileFormat),
 	m_colorFormat(colorFormat)
 {
 
 	// allocate memory
-	int cnt = m_planes * m_nti * m_npi * m_ntv * m_npv;
+	int cnt = 3 * m_nti * m_npi * m_ntv * m_npv;
 	m_samples.resize(cnt);
 
 	// read data
@@ -1190,12 +1188,11 @@ vec3 utia::eval(const vec3& i, const vec3& o, const void *user_param) const
 
 	int nc = m_npv * m_ntv;
 	int nr = m_npi * m_nti;
-	float_t RGB[m_planes];
+	float_t RGB[3] = {0};
 
-	for(int isp = 0; isp < m_planes; ++isp) {
+	for(int isp = 0; isp < 3; ++isp) {
 		int i, j, k, l;
 
-		RGB[isp] = 0.0;
 		for(i = 0; i < 2; ++i)
 			for(j = 0; j < 2; ++j)
 				for(k = 0; k < 2; ++k)
@@ -1224,7 +1221,7 @@ void utia::loadFile(const char *filename) {
 			if (!f.is_open())
 				throw exc("djb_error: Failed to open %s\n", filename);
 			
-			int cnt = m_planes * m_nti * m_npi * m_ntv * m_npv;
+			int cnt = 3 * m_nti * m_npi * m_ntv * m_npv;
 			f.read((char *)&m_samples[0], sizeof(double) * cnt);
 
 			if (f.fail())
@@ -1272,7 +1269,7 @@ void utia::loadFile(const char *filename) {
 				throw exc("djb_error: Failed to open %s\n", filename);
 			
 			long count = 0;
-			for (int isp = 0; isp < m_planes; isp++) {
+			for (int isp = 0; isp < 3; isp++) {
 				for (int ni = 0; ni < m_nti * m_npi; ni++) {
 					for (int nv = 0; nv < m_ntv * m_npv; nv++) {
 						m_samples[count++] = (double) image[4 * m_ntv * m_npv * ni + 4 * nv + isp] / 255.0;
@@ -1296,14 +1293,13 @@ void utia::correctColorSpace() {
 	switch(m_colorFormat) {
 	case ColorFormat_sRGB:
 		{
-			for (int i = 0; i < m_planes * cnt; i++) {
+			for (int i = 0; i < 3 * cnt; i++) {
 				m_samples[i] = (double)colorspace::sRgb2Rgb((float_t)m_samples[i]);
 			}
 			break;
 		}
 	case ColorFormat_XYZ:
 		{
-			// Assume m_planes = 3... X Y Z
 			for (int i = 0; i < cnt; i++) {
 				float_t R, G, B;
 				colorspace::Xyz2Rgb(m_samples[i],
